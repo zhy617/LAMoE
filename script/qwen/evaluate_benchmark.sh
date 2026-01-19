@@ -27,7 +27,7 @@ CLUSTER_N=45  # 与压缩时的聚类数保持一致
 ORIGINAL_MODEL_NAME="Qwen/Qwen1.5-MoE-A2.7B-Chat"
 CACHE_DIR="/root/fsas/models/Qwen/Qwen1.5-MoE-A2.7B-Chat"
 # COMPRESSED_MODEL="/root/fsas/zhanghongyu/SMoE/qwen/merged_models/qwen1.5_moe_merged_svd_cluster_${CLUSTER_N}"
-COMPRESSED_MODEL="/root/fsas/zhanghongyu/LAMoE/models/Qwen/expert_svd_router_avg_la_k45"
+COMPRESSED_MODEL="/root/fsas/zhanghongyu/LAMoE/models/Qwen/expert_svd_router_avg_k45_temp_calibrated"
 OUTPUT_DIR="/root/fsas/zhanghongyu/LAMoE/qwen/eval_results"
 
 

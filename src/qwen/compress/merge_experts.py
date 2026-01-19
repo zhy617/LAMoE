@@ -210,90 +210,102 @@ def merge_experts_in_moe_layer(
     merged_moe_layer.experts = torch.nn.ModuleList(new_experts)
     merged_moe_layer.num_experts = len(new_experts)
     
-    # 更新路由器的输出维度
-    if hasattr(merged_moe_layer, 'gate'):
-        old_gate_weight = merged_moe_layer.gate.weight.data # [num_experts, hidden_size]
-        new_gate_weight = torch.zeros(n_merged_experts, old_gate_weight.shape[1])
-        old_dtype = old_gate_weight.dtype
-        old_device = old_gate_weight.device
-
-        # 用于 logit 调整的 f_k 列表
-        fk_list: List[float] = []
-        total_counts_layer = expert_frequencies.sum().float()
-        
-        # 为每个新专家分配路由权重
+    if router_merging_method == "redierct":
+        print("  Redirect merging method selected, skipping router weight update")
+        num_original_experts = len(moe_layer.experts)
+        expert_map = torch.zeros(num_original_experts, dtype=torch.long, device=model_device)
         for new_idx, cluster_id in enumerate(unique_clusters):
             expert_indices = torch.where(cluster_labels == cluster_id)[0].tolist()
-            
-            # 使用激活频率作为权重来计算聚类的路由权重
-            cluster_counts = expert_frequencies[expert_indices].float()
-            total_cluster_counts = cluster_counts.sum()
+            expert_map[expert_indices] = new_idx
 
-            # 计算簇整体激活频率 f_k（相对于整层）
-            if total_counts_layer > 0:
-                f_k = (total_cluster_counts / total_counts_layer).item()
-            else:
-                f_k = 1.0 / n_merged_experts
-            fk_list.append(f_k)
-            
-            # if total_cluster_counts > 0:
-            #     # 按激活频率加权平均原始路由权重
-            #     weights = cluster_counts / total_cluster_counts # [len(expert_indices)]
-            #     new_gate_weight[new_idx] = (old_gate_weight[expert_indices] * weights.unsqueeze(1)).sum(dim=0)
-            # else:
-            #     # 如果没有激活，使用简单平均
-            #     new_gate_weight[new_idx] = old_gate_weight[expert_indices].mean(dim=0)
+        merged_moe_layer.register_buffer("expert_map", expert_map)
+        merged_moe_layer.num_experts = n_merged_experts
+        print(f"  ✅ Created and registered 'expert_map' with shape {expert_map.shape}")
+    else:
+        # 更新路由器的输出维度
+        if hasattr(merged_moe_layer, 'gate'):
+            old_gate_weight = merged_moe_layer.gate.weight.data # [num_experts, hidden_size]
+            new_gate_weight = torch.zeros(n_merged_experts, old_gate_weight.shape[1])
+            old_dtype = old_gate_weight.dtype
+            old_device = old_gate_weight.device
 
-            if merge_gate_with_svd and len(expert_indices) > 1:
-                # 使用 SVD 合并 gate 行向量：把每个 row 视为 [hidden_size, 1]
-                gate_row_list = []
-                for i in expert_indices:
-                    gate_row = old_gate_weight[i].unsqueeze(1)  # [hidden_size,1]
-                    gate_row_list.append(gate_row)
-                # cluster 内的相对频率
-                cluster_rel_freq = get_cluster_relative_frequencies(expert_frequencies, cluster_labels, cluster_id)
-                merged_gate_col = svd_subspace_alignment(gate_row_list, cluster_rel_freq)  # [hidden_size,1]
-                new_gate_weight[new_idx] = merged_gate_col.squeeze(1).to(dtype=old_dtype, device=old_device)
-            else:
-                # 使用激活频率作为权重来计算聚类的路由权重（原实现）
-                if total_cluster_counts > 0:
-                    weights = cluster_counts / total_cluster_counts # [len(expert_indices)]
-                    new_gate_weight[new_idx] = (old_gate_weight[expert_indices] * weights.unsqueeze(1)).sum(dim=0)
+            # 用于 logit 调整的 f_k 列表
+            fk_list: List[float] = []
+            total_counts_layer = expert_frequencies.sum().float()
+            
+            # 为每个新专家分配路由权重
+            for new_idx, cluster_id in enumerate(unique_clusters):
+                expert_indices = torch.where(cluster_labels == cluster_id)[0].tolist()
+                
+                # 使用激活频率作为权重来计算聚类的路由权重
+                cluster_counts = expert_frequencies[expert_indices].float()
+                total_cluster_counts = cluster_counts.sum()
+
+                # 计算簇整体激活频率 f_k（相对于整层）
+                if total_counts_layer > 0:
+                    f_k = (total_cluster_counts / total_counts_layer).item()
                 else:
-                    new_gate_weight[new_idx] = old_gate_weight[expert_indices].mean(dim=0)
-        
-        # 重新创建gate层
-        # merged_moe_layer.gate = torch.nn.Linear(
-        #     old_gate_weight.shape[1], 
-        #     n_merged_experts, 
-        #     bias=False
-        # )
-        # merged_moe_layer.gate.weight.data.copy_(new_gate_weight)
+                    f_k = 1.0 / n_merged_experts
+                fk_list.append(f_k)
+                
+                # if total_cluster_counts > 0:
+                #     # 按激活频率加权平均原始路由权重
+                #     weights = cluster_counts / total_cluster_counts # [len(expert_indices)]
+                #     new_gate_weight[new_idx] = (old_gate_weight[expert_indices] * weights.unsqueeze(1)).sum(dim=0)
+                # else:
+                #     # 如果没有激活，使用简单平均
+                #     new_gate_weight[new_idx] = old_gate_weight[expert_indices].mean(dim=0)
 
-        # 重新创建gate层：如果需要 logit 调整，则启用 bias 并填充为 fk_list
-        if apply_logit_adjustment:
-            merged_moe_layer.gate = torch.nn.Linear(
-                old_gate_weight.shape[1],
-                n_merged_experts,
-                bias=True
-            )
-        else:
-            merged_moe_layer.gate = torch.nn.Linear(
-                old_gate_weight.shape[1],
-                n_merged_experts,
-                bias=False
-            )
-        merged_moe_layer.gate.weight.data.copy_(new_gate_weight)
-        
-        if apply_logit_adjustment:
-            bias_tensor = torch.tensor(fk_list, dtype=old_dtype, device=old_device)
-            # 数值稳定性保护，避免 log(0)
-            eps = 1e-12
-            bias_tensor = torch.clamp(bias_tensor, min=eps)
-            # 使用自然对数 ln(f_k)
-            bias_tensor = torch.log(bias_tensor) * TAU_FOR_MERGED_MODEL
-            # 将 bias 加入 gate.bias (o_k + ln f_k)
-            merged_moe_layer.gate.bias.data.copy_(bias_tensor)
+                if merge_gate_with_svd and len(expert_indices) > 1:
+                    # 使用 SVD 合并 gate 行向量：把每个 row 视为 [hidden_size, 1]
+                    gate_row_list = []
+                    for i in expert_indices:
+                        gate_row = old_gate_weight[i].unsqueeze(1)  # [hidden_size,1]
+                        gate_row_list.append(gate_row)
+                    # cluster 内的相对频率
+                    cluster_rel_freq = get_cluster_relative_frequencies(expert_frequencies, cluster_labels, cluster_id)
+                    merged_gate_col = svd_subspace_alignment(gate_row_list, cluster_rel_freq)  # [hidden_size,1]
+                    new_gate_weight[new_idx] = merged_gate_col.squeeze(1).to(dtype=old_dtype, device=old_device)
+                else:
+                    # 使用激活频率作为权重来计算聚类的路由权重（原实现）
+                    if total_cluster_counts > 0:
+                        weights = cluster_counts / total_cluster_counts # [len(expert_indices)]
+                        new_gate_weight[new_idx] = (old_gate_weight[expert_indices] * weights.unsqueeze(1)).sum(dim=0)
+                    else:
+                        new_gate_weight[new_idx] = old_gate_weight[expert_indices].mean(dim=0)
+            
+            # 重新创建gate层
+            # merged_moe_layer.gate = torch.nn.Linear(
+            #     old_gate_weight.shape[1], 
+            #     n_merged_experts, 
+            #     bias=False
+            # )
+            # merged_moe_layer.gate.weight.data.copy_(new_gate_weight)
+
+            # 重新创建gate层：如果需要 logit 调整，则启用 bias 并填充为 fk_list
+            if apply_logit_adjustment:
+                merged_moe_layer.gate = torch.nn.Linear(
+                    old_gate_weight.shape[1],
+                    n_merged_experts,
+                    bias=True
+                )
+            else:
+                merged_moe_layer.gate = torch.nn.Linear(
+                    old_gate_weight.shape[1],
+                    n_merged_experts,
+                    bias=False
+                )
+            merged_moe_layer.gate.weight.data.copy_(new_gate_weight)
+            
+            if apply_logit_adjustment:
+                bias_tensor = torch.tensor(fk_list, dtype=old_dtype, device=old_device)
+                # 数值稳定性保护，避免 log(0)
+                eps = 1e-12
+                bias_tensor = torch.clamp(bias_tensor, min=eps)
+                # 使用自然对数 ln(f_k)
+                bias_tensor = torch.log(bias_tensor) * TAU_FOR_MERGED_MODEL
+                # 将 bias 加入 gate.bias (o_k + ln f_k)
+                merged_moe_layer.gate.bias.data.copy_(bias_tensor)
     
     return merged_moe_layer
 
@@ -482,6 +494,7 @@ def save_merged_model(
                 "trainable_parameters": sum(p.numel() for p in merged_model.parameters() if p.requires_grad),
                 "moe_layers_info": {},
                 "apply_logit_adjustment": apply_logit_adjustment,
+                "num_merged_experts": CLUSTER_N,
             }
             
             # 统计每层的专家数量
@@ -583,6 +596,7 @@ from ...config import (
         MERGE_GATE_WITH_SVD as merge_gate_with_svd,
         APPLY_LOGIT_ADJUSTMENT as apply_logit_adjustment,
         TAU_FOR_MERGED_MODEL,
+        ROUTER_MERGING_METHOD as router_merging_method,
     )
 
 def main():

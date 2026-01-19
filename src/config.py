@@ -3,7 +3,7 @@ import os
 # =========================================================
 # 1. 实验超参数 (Hyperparameters)
 # =========================================================
-CURRENT_CLUSTER_N = 45 # use for analysis
+CURRENT_CLUSTER_N = 60 # use for analysis
 CLUSTER_N = 45
 SAMPLE_SIZE = 128
 MAX_LENGTH = 2048
@@ -11,19 +11,20 @@ TARGET_LAYERS = list(range(24))  # 要聚类的层
 
 # 合并参数 (用于生成新模型名字)
 EXPERT_MERGING_METHOD = "svd"
-ROUTER_MERGING_METHOD = "avg"
-APPLY_LOGIT_ADJUSTMENT = True
-MERGE_GATE_WITH_SVD = True
+ROUTER_MERGING_METHOD = "redierct" # avg, avg_la, svd, svd_la, redirect
+APPLY_LOGIT_ADJUSTMENT = False
+MERGE_GATE_WITH_SVD = False
+REDIRECT_ENABLED = True
 TAU_FOR_MERGED_MODEL = 2.06
 
 # =========================================================
 # 2. [核心开关] 当前正在操作哪个模型？
 # =========================================================
 # 场景 A: 跑 Base 模型 (注释掉场景 B)
-# CURRENT_MODEL_PATH = "/root/fsas/zhanghongyu/LAMoE/models/Qwen/Qwen1.5-MoE-A2.7B"
+CURRENT_MODEL_PATH = "/root/fsas/zhanghongyu/LAMoE/models/Qwen/Qwen1.5-MoE-A2.7B"
 
 # 场景 B: 跑 Merged 模型 (注释掉场景 A)
-CURRENT_MODEL_PATH = f"/root/fsas/zhanghongyu/LAMoE/models/Qwen/expert_{EXPERT_MERGING_METHOD}_router_{ROUTER_MERGING_METHOD}_k{CLUSTER_N}"
+# CURRENT_MODEL_PATH = f"/root/fsas/zhanghongyu/LAMoE/models/Qwen/expert_{EXPERT_MERGING_METHOD}_router_{ROUTER_MERGING_METHOD}_k{CLUSTER_N}"
 
 FAMILY_NAME = "Qwen"    # [关键] 家族名称 (Qwen, Mixtral)
 # =========================================================
