@@ -652,20 +652,24 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        self.num_experts = config.num_experts
+        self.num_original_experts = getattr(config, "_original_num_experts", config.num_experts)
+        self.num_merged_experts = getattr(config, "num_experts", self.num_original_experts)
+
+        # self.num_original_experts = 60
+        # self.num_merged_experts = 45
+
         self.top_k = config.num_experts_per_tok
         self.norm_topk_prob = config.norm_topk_prob
 
         # 修改
-        expert_map = torch.arange(self.num_experts, dtype=torch.long)
-        self.register_buffer("expert_map", expert_map, persistent=False)
+        expert_map = torch.arange(self.num_original_experts, dtype=torch.long)
+        self.register_buffer("expert_map", expert_map, persistent=True)
         # find if config has merged experts
-        self.num_merged_experts = getattr(config, "num_merged_experts", self.num_experts)
 
         # gating
-        self.gate = nn.Linear(config.hidden_size, config.num_experts, bias=False)
+        self.gate = nn.Linear(config.hidden_size, self.num_original_experts, bias=False)
         self.experts = nn.ModuleList(
-            [Qwen2MoeMLP(config, intermediate_size=config.moe_intermediate_size) for _ in range(self.num_experts)]
+            [Qwen2MoeMLP(config, intermediate_size=config.moe_intermediate_size) for _ in range(self.num_merged_experts)]
         )
 
         self.shared_expert = Qwen2MoeMLP(config, intermediate_size=config.shared_expert_intermediate_size)
@@ -679,10 +683,10 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
         router_logits = self.gate(hidden_states)
 
         routing_weights = F.softmax(router_logits, dim=1, dtype=torch.float)
-        routing_weights, selected_experts = torch.topk(routing_weights, self.top_k, dim=-1)
+        routing_weights, selected_experts_original = torch.topk(routing_weights, self.top_k, dim=-1)
 
         # 修改
-        selected_experts = self.expert_map[selected_experts]
+        selected_experts = self.expert_map[selected_experts_original]
 
         if self.norm_topk_prob:
             routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
@@ -695,7 +699,7 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
 
         # One hot encode the selected experts to create an expert mask
         # this will be used to easily index which expert is going to be sollicitated
-        expert_mask = torch.nn.functional.one_hot(selected_experts, num_classes=self.num_experts).permute(2, 1, 0)
+        expert_mask = torch.nn.functional.one_hot(selected_experts, num_classes=self.num_merged_experts).permute(2, 1, 0)
 
         # Loop over all available experts in the model and perform the computation on each expert
         expert_hit = torch.greater(expert_mask.sum(dim=(-1, -2)), 0).nonzero()
@@ -1210,7 +1214,10 @@ class Qwen2MoeForCausalLM(Qwen2MoePreTrainedModel, GenerationMixin):
             loss = self.loss_function(logits, labels, self.vocab_size, **kwargs)
 
         aux_loss = None
-        if output_router_logits:
+
+        is_merged_model =  self.config.num_experts != getattr(self.config, "_original_num_experts", self.config.num_experts)
+
+        if output_router_logits and not is_merged_model:
             aux_loss = load_balancing_loss_func(
                 outputs.router_logits,
                 self.num_experts,

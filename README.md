@@ -95,6 +95,11 @@ bash script/qwen/calculate_logit_entropy.sh
 bash script/qwen/calculate_freq_cv.sh
 ```
 
+## decode and log
+```bash
+python -m src.qwen.evaluate.decode_and_log_experts
+```
+
 ## Configuration
 `avg`
 ```
