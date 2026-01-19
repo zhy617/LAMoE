@@ -30,6 +30,12 @@ cd lm-evaluation-harness
 pip install -e .
 ```
 
+## env
+```bash
+cp /root/LAMoE/venv/modeling_qwen2_moe.py .venv/lib/python3.10/site-packages/transformers/models/qwen2_moe/modeling_qwen2_moe.py
+```
+
+
 ## Model and Data
 ```bash
 bash script/download_models.sh
