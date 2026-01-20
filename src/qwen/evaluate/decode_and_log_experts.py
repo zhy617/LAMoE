@@ -102,8 +102,10 @@ def decode_and_log_expert_activations(model, tokenizer, num_tokens_to_generate: 
     print("✅ Generation and logging complete.")
     return all_expert_selections
 
-ORIGINAL_MODEL_PATH = "/root/fsas/zhanghongyu/LAMoE/models/Qwen/Qwen1.5-MoE-A2.7B/models--Qwen--Qwen1.5-MoE-A2.7B/snapshots/1a758c50ecb6350748b9ce0a99d2352fd9fc11c9"
+# ORIGINAL_MODEL_PATH = "/root/fsas/zhanghongyu/LAMoE/models/Qwen/Qwen1.5-MoE-A2.7B/models--Qwen--Qwen1.5-MoE-A2.7B/snapshots/1a758c50ecb6350748b9ce0a99d2352fd9fc11c9"
 # ORIGINAL_MODEL_PATH = "/root/fsas/zhanghongyu/LAMoE/models/Qwen/expert_svd_router_redierct_k45"
+ORIGINAL_MODEL_PATH = "/root/fsas/zhanghongyu/LAMoE/models/Qwen/expert_svd_router_redierct_k30"
+
 
 # =========================================================
 # 3. 主函数
