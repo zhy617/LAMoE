@@ -4,7 +4,7 @@ import os
 # 1. 实验超参数 (Hyperparameters)
 # =========================================================
 CURRENT_CLUSTER_N = 60 # use for analysis
-CLUSTER_N = 45
+CLUSTER_N = 30
 SAMPLE_SIZE = 128
 MAX_LENGTH = 2048
 TARGET_LAYERS = list(range(24))  # 要聚类的层
